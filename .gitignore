@@ -1,0 +1,7 @@
+*.pyc
+*.rej
+*.orig
+*.patch
+.DS_Store
+idea/*
+temp/*
