@@ -4,6 +4,12 @@
 
 A crawler of NKN network for discover nodes online.
 
+## Prerequisites
+> Python 2.7
+* Module json
+* Module requests
+* Module gevent
+
 ## Node Crawler Usage
 
 ```
