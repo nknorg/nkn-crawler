@@ -35,8 +35,7 @@ class Crawler(object):
         try:
             r = requests.post('http://%s:%s' % (ip, port), json=d, headers={'Content-Type':'application/json'}, timeout=timeout)
         except Exception as e:
-            sys.stderr.write('%s: %s\n' % (time.strftime('%F %T'), e.message))
-            ### TODO: remove Id from self.probed
+            sys.stderr.write('%s: POST %s:%s met error %s\n' % (time.strftime('%F %T'), ip, port, e.message))
             return ''
         return r.text
 
@@ -44,7 +43,7 @@ class Crawler(object):
         try:
             d = json.loads(resp)
         except Exception as e:
-            sys.stderr.write('%s: json load %s met error %s\n' % (time.strftime('%F %T'), resp, e.message))
+            sys.stderr.write('%s: json load [%s] met error %s\n' % (time.strftime('%F %T'), resp, e.message))
             return
 
         for vn in d.get('result',{}).get('Vnodes',[]):
@@ -52,9 +51,9 @@ class Crawler(object):
             Host, chord_port = vn.get('Host','').split(':')
 
             ### Save craw result
-            succ_lst = vn.pop('Successors',[])
-            vn.pop('Finger',[])     ### unsave finger table
-            vn.pop('Predecessor',{})    ### unsave Predecessor
+            succ_lst = [ n for n in vn.pop('Successors',[]) if n ]
+            succ_lst += [ n for n in vn.pop('Finger',[]) if n ]
+            succ_lst += [ vn.pop('Predecessor') or {} ]
             self.result[Id] = vn
 
             ### craw Successor
@@ -78,6 +77,9 @@ class Crawler(object):
 
                 host, chord_port = n
                 self.parse(self.req(host, int(chord_port)+3))
+            except AttributeError as e:
+                sys.stderr.write('%s: worker exit req %s met err %s\n' % (time.strftime('%F %T'), str(n),type(e)))
+                continue
             except Exception as e:
                 sys.stderr.write('%s: worker exit due to err %s\n' % (time.strftime('%F %T'), type(e)))
                 break
