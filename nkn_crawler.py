@@ -6,11 +6,13 @@ import sys
 import time
 import json
 import requests
+import traceback
 from argv2dict import argv2dict
 
 import gevent
 from gevent.pool import Group
 from gevent.queue import Queue
+from gevent.queue import Empty
 
 class Crawler(object):
     def __init__(self, seed, port='30000', **kwargs):
@@ -18,6 +20,7 @@ class Crawler(object):
         self.probed = set()
         self.task_lst = Queue()
         self.pool = Group()
+        self.conf = kwargs
 
         addr = seed.split(':')    ### Invalid the seed if conf NOT set
         if len(addr)==1: ### if seed str not contain port, use conf['port'] or default
@@ -31,58 +34,53 @@ class Crawler(object):
         sys.stderr.write('Crawler start from %s\n' % (':'.join(addr)))
 
     def req(self, ip, port=30003, apiId='1', apiVer='3.0', method='getchordringinfo', params={}, timeout=20, **kwargs):
+        r = ''
+        ret = {}
         d = dict(id=apiId, jsonrpc=apiVer, method=method, params=params)
         try:
             r = requests.post('http://%s:%s' % (ip, port), json=d, headers={'Content-Type':'application/json'}, timeout=timeout)
+            ret = json.loads(r.text)
         except Exception as e:
-            sys.stderr.write('%s: POST %s:%s met error %s\n' % (time.strftime('%F %T'), ip, port, e.message))
-            return ''
-        return r.text
+            sys.stderr.write('%s: met Error [%s] when request [%s] from %s:%s resp [%s]\n' % (
+                time.strftime('%F %T'), e.message, method, ip, port, r.text if r else ''
+            ))
+            raise e
+        return ret
 
     def parse(self, resp):
-        try:
-            d = json.loads(resp)
-        except Exception as e:
-            sys.stderr.write('%s: json load [%s] met error %s\n' % (time.strftime('%F %T'), resp, e.message))
-            return
-
-        for vn in d.get('result',{}).get('Vnodes',[]):
-            Id = vn.get('Id','')
-            Host, chord_port = vn.get('Host','').split(':')
-
-            ### Save craw result
-            succ_lst = [ n for n in vn.pop('Successors',[]) if n ]
+        succ_lst = []
+        for vn in resp.get('result',{}).get('Vnodes',[]):
+            ### new discovery
+            succ_lst += [ n for n in vn.pop('Successors',[]) if n ]
             succ_lst += [ n for n in vn.pop('Finger',[]) if n ]
             succ_lst += [ vn.pop('Predecessor') or {} ]
-            self.result[Id] = vn
+        return succ_lst
 
-            ### craw Successor
-            for succ in succ_lst:
-                if succ.get('Id', '') in self.probed:
-                    continue    ### craw already
-                self.task_lst.put_nowait(succ)
+    def info_from_task(self, task):
+        ip, port = task.get('Host', '').split(':')
+        return task.get('Id', ''), ip, int(port)+3
+
+    def task_to_node(self, task):
+        return task
 
     def worker(self, timeout=20):
         while True:
             try:
                 t = self.task_lst.get(timeout=timeout)
-                if t.get('Id', '') in self.probed:
-                    continue    ### craw already
-                else:
-                    self.probed.add(t.get('Id', ''))
+                Id, ip, port = self.info_from_task(t)
 
-                n = t.get('Host','').split(':')
-                if len(n) != 2:
-                    continue    ### invalid Host
-
-                host, chord_port = n
-                self.parse(self.req(host, int(chord_port)+3))
-            except AttributeError as e:
-                sys.stderr.write('%s: worker exit req %s met err %s\n' % (time.strftime('%F %T'), str(n),type(e)))
-                continue
-            except Exception as e:
+                if ip and port and Id not in self.probed: ### Is valid task and Not crawl yet
+                    self.probed.add(Id) ### mark it as crawled whatever success or fail
+                    new_nodes = self.parse(self.req(ip, port, **self.conf))
+                    self.result[Id] = self.task_to_node(t)    ### Add to crawl result
+                    [ self.task_lst.put_nowait(n) for n in new_nodes ] ### add new_nodes into task_lst
+            except Empty as e:
                 sys.stderr.write('%s: worker exit due to err %s\n' % (time.strftime('%F %T'), type(e)))
                 break
+            except Exception as e:
+                sys.stderr.write('%s: worker req %s met err %s\n' % (time.strftime('%F %T'), str(t), type(e)))
+                # print traceback.format_exc(e) ### stay for debug
+                continue
 
     def debug(self, interval=5):
         while True:
