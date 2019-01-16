@@ -89,12 +89,14 @@ class Crawler(object):
 
     def run(self, timeout=20, thread=1, **kwargs):
         gevent.spawn(self.debug, 5)
-        self.pool.map(self.worker, [int(timeout)]*int(thread))
+        self.pool.map(self.worker, [timeout]*int(thread))
         self.pool.join()
         sys.stderr.write('Total: %d Nodes\n' % len(self.result))
 
 if __name__ == "__main__":
     conf = argv2dict(*sys.argv[1:])
+    if conf.has_key('timeout'):
+        conf['timeout'] = float(conf['timeout'])
 
     craw = Crawler(**conf)
     craw.run(**conf)
