@@ -30,7 +30,7 @@ class Crawler(object):
             sys.stderr.write('Invalid seed %s\n' % seed)
             exit(22)
 
-        self.task_lst.put_nowait(dict(Host=':'.join(addr)))
+        #self.task_lst.put_nowait(dict(Host=':'.join(addr)))
         sys.stderr.write('Crawler start from %s\n' % (':'.join(addr)))
 
     def req(self, ip, port=30003, apiId='1', apiVer='3.0', method='getchordringinfo', params={}, timeout=20, **kwargs):
