@@ -33,8 +33,8 @@ class ChordCrawler(Crawler):
         return task.get('id', ''), uri.split(':')[0], task.get('jsonRpcPort', 30003)
 
     def task_to_node(self, node):
-        ret = node.get('successors', [])
-        ret += node.get('predecessors', [])
+        ret = list(node.get('successors') or [])
+        ret += node.get('predecessors') or []
         return reduce(lambda x,y:x+y, node.get('fingerTable', {}).values(), ret)
 
     def worker(self, timeout=20):
